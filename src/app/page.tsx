@@ -1,13 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useRef, useState } from "react";
 
 import { useMutation } from "@tanstack/react-query";
 import { client } from "./lib/client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUsername } from "@/hooks/use-username";
 
-export default function Home() {
+const Page = () => {
+ return (
+  <Suspense>
+   <Home />
+  </Suspense>
+ );
+};
+
+function Home() {
  const router = useRouter();
  const searchParams = useSearchParams();
  const wasDestroyed = searchParams.get("destroyed") === "true";
@@ -15,14 +23,31 @@ export default function Home() {
 
  const { username } = useUsername();
 
- const { mutate: createRoom } = useMutation({
+ const lockRef = useRef(false);
+ const { mutate: createRoom, isPending } = useMutation({
   mutationFn: async () => {
    const resp = await client.room.create.post();
+   // if (resp.status !== 200) {
+   //   throw new Error("Failed to create room");
+   // }
    if (resp.status === 200) {
     router.push(`/room/${resp.data?.roomId}`);
    }
+   return resp.data;
+  },
+  onSuccess: (data) => {
+   router.push(`/room/${data?.roomId}`);
+  },
+  onError: () => {
+   lockRef.current = false;
   },
  });
+
+ const handleCreateRoom = () => {
+  if (lockRef.current) return;
+  lockRef.current = true;
+  createRoom();
+ };
 
  return (
   <main className="flex min-h-screen flex-col items-center justify-center p-4">
@@ -74,10 +99,13 @@ export default function Home() {
       </div>
 
       <button
-       onClick={() => createRoom()}
+       onClick={handleCreateRoom}
+       disabled={isPending || lockRef.current}
        className="w-full bg-zinc-100 text-black p-3 text-sm font-bold hover:bg-zinc-50 hover:text-black transition-colors mt-2 cursor-pointer disabled:opacity-50"
       >
-       CREATE SECURE ROOM
+       {isPending || lockRef.current
+        ? "CREATING ROOM..."
+        : "CREATE SECURE ROOM"}
       </button>
      </div>
     </div>
@@ -85,3 +113,5 @@ export default function Home() {
   </main>
  );
 }
+
+export default Page;
