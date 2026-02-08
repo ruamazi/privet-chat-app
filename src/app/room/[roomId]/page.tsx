@@ -61,7 +61,7 @@ const RoomPage = () => {
   audioRef.current = new Audio("/notification.wav");
  }, []);
 
- // Check for encryption key in URL hash
+ // Check for encryption key in URL hash - runs when component mounts
  useEffect(() => {
   const extractKey = () => {
    const hash = window.location.hash;
@@ -72,8 +72,6 @@ const RoomPage = () => {
      setEncryptionKeyAvailable(true);
      // Clear the hash from URL for security
      window.history.replaceState(null, "", window.location.pathname + window.location.search);
-     // Force re-fetch messages with new key
-     refetch();
     }
    } else if (E2EE.getKey(roomId)) {
     setEncryptionKeyAvailable(true);
@@ -85,7 +83,7 @@ const RoomPage = () => {
   const timer = setTimeout(extractKey, 100);
   
   return () => clearTimeout(timer);
- }, [roomId, refetch]);
+ }, [roomId]);
 
  // Request notification permission
  useEffect(() => {
@@ -211,12 +209,19 @@ const RoomPage = () => {
   });
 
  const { data: messages, refetch } = useQuery({
-  queryKey: ["messages", roomId, encryptionKeyAvailable],
-  queryFn: async () => {
-   const resp = await client.messages.get({ query: { roomId } });
-   return resp.data;
-  },
- });
+   queryKey: ["messages", roomId, encryptionKeyAvailable],
+   queryFn: async () => {
+    const resp = await client.messages.get({ query: { roomId } });
+    return resp.data;
+   },
+  });
+ 
+  // Re-fetch messages when encryption key becomes available
+  useEffect(() => {
+   if (encryptionKeyAvailable) {
+    refetch();
+   }
+  }, [encryptionKeyAvailable, refetch]);
 
  const { data: typingData, refetch: refetchTyping } = useQuery({
   queryKey: ["typing", roomId],
