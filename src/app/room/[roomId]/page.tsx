@@ -63,19 +63,29 @@ const RoomPage = () => {
 
  // Check for encryption key in URL hash
  useEffect(() => {
-  const hash = window.location.hash;
-  if (hash && hash.startsWith("#key=")) {
-   const key = hash.substring(5);
-   if (key) {
-    E2EE.storeKey(roomId, key);
+  const extractKey = () => {
+   const hash = window.location.hash;
+   if (hash && hash.startsWith("#key=")) {
+    const key = hash.substring(5);
+    if (key && key.length > 0) {
+     E2EE.storeKey(roomId, key);
+     setEncryptionKeyAvailable(true);
+     // Clear the hash from URL for security
+     window.history.replaceState(null, "", window.location.pathname + window.location.search);
+     // Force re-fetch messages with new key
+     refetch();
+    }
+   } else if (E2EE.getKey(roomId)) {
     setEncryptionKeyAvailable(true);
-    // Clear the hash from URL for security
-    window.history.replaceState(null, "", window.location.pathname + window.location.search);
    }
-  } else if (E2EE.getKey(roomId)) {
-   setEncryptionKeyAvailable(true);
-  }
- }, [roomId]);
+  };
+  
+  // Extract key immediately and also after a short delay (for mobile browsers)
+  extractKey();
+  const timer = setTimeout(extractKey, 100);
+  
+  return () => clearTimeout(timer);
+ }, [roomId, refetch]);
 
  // Request notification permission
  useEffect(() => {
@@ -226,14 +236,17 @@ const RoomPage = () => {
  useRealtime({
   channels: [roomId],
   events: ["chat.message", "chat.destroy", "chat.messageEdited", "chat.messageDeleted", "chat.reaction", "chat.readReceipt", "chat.typing"],
-  onData: ({ event, data }) => {
-   if (event === "chat.message") {
-    refetch();
-    playNotificationSound();
-    sendNotification("New Message", `${data.sender}: ${data.text}`);
-    // Mark as read
-    setTimeout(() => markAsRead(data.id), 500);
-   }
+   onData: ({ event, data }) => {
+    if (event === "chat.message") {
+     refetch();
+     // Only play sound and send notification for messages from OTHER users
+     if (data.sender !== username) {
+      playNotificationSound();
+      sendNotification("New Message", `${data.sender}: ${data.text}`);
+     }
+     // Mark as read
+     setTimeout(() => markAsRead(data.id), 500);
+    }
    if (event === "chat.destroy") {
     router.push("/?destroyed=true");
    }
@@ -352,20 +365,22 @@ const RoomPage = () => {
   }
  };
 
- const decryptMessage = (msg: Message): string => {
-  if (msg.encrypted) {
-   const key = E2EE.getKey(roomId);
-   if (key) {
-    try {
-     return E2EE.decrypt(msg.text, key);
-    } catch {
-     return "[Unable to decrypt]";
+  const decryptMessage = (msg: Message): string => {
+   if (msg.encrypted) {
+    const key = E2EE.getKey(roomId);
+    if (key) {
+     try {
+      const decrypted = E2EE.decrypt(msg.text, key);
+      return decrypted;
+     } catch (error) {
+      console.error("Failed to decrypt message:", error, "Message ID:", msg.id);
+      return "[Unable to decrypt - key may be incorrect]";
+     }
     }
+    return "[Encrypted message - waiting for key]";
    }
-   return "[Encrypted message]";
-  }
-  return msg.text;
- };
+   return msg.text;
+  };
 
  if (loading) {
   return (

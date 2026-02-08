@@ -31,10 +31,20 @@ export class E2EE {
   return CryptoJS.AES.encrypt(text, key).toString();
  }
 
- static decrypt(ciphertext: string, key: string): string {
-  const bytes = CryptoJS.AES.decrypt(ciphertext, key);
-  return bytes.toString(CryptoJS.enc.Utf8);
- }
+  static decrypt(ciphertext: string, key: string): string {
+   try {
+    const bytes = CryptoJS.AES.decrypt(ciphertext, key);
+    const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+    // If decryption results in empty string, it likely failed
+    if (!decrypted || decrypted.length === 0) {
+     throw new Error("Decryption returned empty string");
+    }
+    return decrypted;
+   } catch (error) {
+    console.error("Decryption error:", error);
+    throw error;
+   }
+  }
 
  static generateRoomKey(): { key: string; hash: string } {
   const key = this.generateKey();
